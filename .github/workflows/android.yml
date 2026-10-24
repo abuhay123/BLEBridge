@@ -1,3 +1,4 @@
+
 name: Android CI/CD
 
 on:
@@ -7,48 +8,55 @@ on:
   pull_request:
     branches: [ "main", "master" ]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build Debug APK
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-    - name: Set up JDK 21
-      uses: actions/setup-java@v4
-      with:
-        java-version: '21'
-        distribution: 'temurin'
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
 
-    # ISSUE FIX: The Gradle Wrapper validation was failing because the gradle-wrapper.jar
-    # had an unknown hash. This step uses gradle/wrapper-validation-action to ensure the
-    # wrapper is valid before proceeding. If it fails, the wrapper JAR needs to be regenerated.
-    - name: Validate Gradle Wrapper
-      uses: gradle/wrapper-validation-action@v2
+      - name: Validate Gradle Wrapper
+        uses: gradle/wrapper-validation-action@v2
 
-    - name: Decode Debug Keystore
-      run: |
-        if [ -f debug.keystore.base64 ]; then
-          base64 -d debug.keystore.base64 > debug.keystore
-        fi
-        touch .env
+      - name: Decode Debug Keystore
+        run: |
+          if [ -f debug.keystore.base64 ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+          fi
+          touch .env
 
-    - name: Make Gradle Wrapper Executable
-      run: chmod +x gradlew
+      - name: Make Gradle Wrapper Executable
+        run: chmod +x gradlew
 
-    # ISSUE FIX: Removed the problematic 'gradle/actions/setup-gradle@v4' step that was
-    # performing its own validation and conflicting with our explicit wrapper validation.
-    # The gradle wrapper itself handles setup when invoked via ./gradlew
+      - name: Build Debug APK with Gradle
+        run: ./gradlew assembleDebug --no-daemon
 
-    - name: Build Debug APK with Gradle
-      run: ./gradlew assembleDebug --no-daemon
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BLE-Bridge-Debug-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
 
-    - name: Upload Debug APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: BLE-Bridge-Debug-APK
-        path: app/build/outputs/apk/debug/app-debug.apk
-        if-no-files-found: error
-        retention-days: 14
+      - name: Publish APK to GitHub Releases
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create v1.0.0 \
+            app/build/outputs/apk/debug/app-debug.apk \
+            --title "BLE Bridge v1.0" \
+            --notes "First test version of BLE Bridge for Android" \
+            --target "$GITHUB_SHA"
